@@ -12,6 +12,8 @@ from modules.elm.models import (
     AcademicVacationPeriod,
     LeaveBalance,
     LeaveRequest,
+    LeaveExtension,
+    LeaveResumption,
     LeavePolicyConfig,
 )
 from modules.elm.domain.validation import ValidationError
@@ -32,6 +34,11 @@ from modules.elm.services.leave_service import (
     withdraw_leave,
     request_cancellation,
     decide_cancellation,
+    apply_leave_extension,
+    review_leave_extension,
+    submit_duty_resumption,
+    review_duty_resumption,
+    process_sla_thresholds,
     record_offline_leave,
     process_year_end_rollover,
     get_or_create_policy,
@@ -42,6 +49,11 @@ from modules.elm.api.serializers import (
     LeaveRequestCreateSerializer,
     SubstituteActionSerializer,
     ApprovalActionSerializer,
+    LeaveExtensionSerializer,
+    LeaveExtensionCreateSerializer,
+    LeaveResumptionSerializer,
+    ResumptionSubmitSerializer,
+    ReviewDecisionSerializer,
     OfflineLeaveCreateSerializer,
     HolidayCalendarSerializer,
     AcademicVacationPeriodSerializer,
@@ -73,7 +85,7 @@ class LeaveBalanceView(BaseElmView):
 
 
 class LeaveRequestViewSet(ViewSet):
-    """Leave application lifecycle viewset: submit, retrieve, withdraw, cancel."""
+    """Leave application lifecycle viewset: submit, retrieve, withdraw, cancel, extend, resume."""
     permission_classes = [IsAuthenticatedPrincipal, HasModuleGrant("elm")]
 
     def list(self, request):
@@ -97,6 +109,9 @@ class LeaveRequestViewSet(ViewSet):
 
         user_id = request.principal.user_id
         employee_kind = getattr(request.principal, "kind", "faculty")
+        active_role = getattr(request.principal, "active_role", "")
+        roles = getattr(request.principal, "roles", ())
+        is_director = "director" in [r.lower() for r in (roles or ())] or active_role == "director"
 
         try:
             leave_req = apply_for_leave(
@@ -113,6 +128,7 @@ class LeaveRequestViewSet(ViewSet):
                 station_start_date=data.get("station_start_date"),
                 station_end_date=data.get("station_end_date"),
                 substitute_user_id=data.get("substitute_user_id"),
+                is_director=is_director,
             )
         except ValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -153,6 +169,45 @@ class LeaveRequestViewSet(ViewSet):
         except (ValidationError, LeaveRequest.DoesNotExist) as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(LeaveRequestSerializer(leave_req).data)
+
+    @action(detail=True, methods=["post"], url_path="extend")
+    def extend(self, request, pk=None):
+        """Apply for extension of ongoing EL/COL/VL (BR-EL-025, WF-EL-04)."""
+        serializer = LeaveExtensionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_id = request.principal.user_id
+
+        try:
+            ext = apply_leave_extension(
+                leave_id=int(pk),
+                user_id=user_id,
+                extension_end_date=serializer.validated_data["extension_end_date"],
+                reason=serializer.validated_data["reason"],
+                today=date.today(),
+            )
+        except (ValidationError, LeaveRequest.DoesNotExist) as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(LeaveExtensionSerializer(ext).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="resume")
+    def resume(self, request, pk=None):
+        """Declare return to duty after EL/COL/VL (BR-EL-027, WF-EL-05)."""
+        serializer = ResumptionSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_id = request.principal.user_id
+
+        try:
+            resumption = submit_duty_resumption(
+                leave_id=int(pk),
+                user_id=user_id,
+                actual_resumption_date=serializer.validated_data["actual_resumption_date"],
+                today=date.today(),
+            )
+        except (ValidationError, LeaveRequest.DoesNotExist) as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(LeaveResumptionSerializer(resumption).data, status=status.HTTP_201_CREATED)
 
 
 class SubstituteQueueView(BaseElmView):
@@ -221,6 +276,67 @@ class ApprovalQueueView(BaseElmView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(LeaveRequestSerializer(leave_req).data)
+
+
+class ExtensionQueueView(BaseElmView):
+    """Review queue and decisions for Leave Extensions (BR-EL-025)."""
+    permission_classes = [IsAuthenticatedPrincipal, HasModuleGrant("elm"), HasPermission("elm.leave.approve")]
+
+    def get(self, request):
+        pending_extensions = LeaveExtension.objects.filter(
+            status=LeaveExtension.ExtensionStatus.PENDING_UNIT_HEAD
+        ).order_by("-created_at")
+        return Response(LeaveExtensionSerializer(pending_extensions, many=True).data)
+
+    def post(self, request, pk=None):
+        actor_id = request.principal.user_id
+        serializer = ReviewDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            ext = review_leave_extension(
+                extension_id=int(pk),
+                actor_id=actor_id,
+                action=serializer.validated_data["action"],
+                remarks=serializer.validated_data.get("remarks", ""),
+            )
+        except (ValidationError, LeaveExtension.DoesNotExist) as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(LeaveExtensionSerializer(ext).data)
+
+
+class ResumptionQueueView(BaseElmView):
+    """Review queue and decisions for Duty Resumptions (BR-EL-027, BR-EL-028)."""
+    permission_classes = [IsAuthenticatedPrincipal, HasModuleGrant("elm"), HasPermission("elm.leave.approve")]
+
+    def get(self, request):
+        pending_resumptions = LeaveResumption.objects.filter(
+            status=LeaveResumption.ResumptionStatus.SUBMITTED
+        ).order_by("-created_at")
+        return Response(LeaveResumptionSerializer(pending_resumptions, many=True).data)
+
+    def post(self, request, pk=None):
+        actor_id = request.principal.user_id
+        remarks = request.data.get("remarks", "")
+        try:
+            resumption = review_duty_resumption(
+                resumption_id=int(pk),
+                reviewer_id=actor_id,
+                remarks=remarks,
+            )
+        except (ValidationError, LeaveResumption.DoesNotExist) as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(LeaveResumptionSerializer(resumption).data)
+
+
+class ProcessSLAView(BaseElmView):
+    """Trigger SLA reminder and escalation sweep (BR-EL-032, BR-EL-033, UC-EL-021)."""
+    permission_classes = [IsAuthenticatedPrincipal, HasModuleGrant("elm"), HasPermission("elm.admin.manage")]
+
+    def post(self, request):
+        res = process_sla_thresholds()
+        return Response(res)
 
 
 class AdminLeaveView(BaseElmView):

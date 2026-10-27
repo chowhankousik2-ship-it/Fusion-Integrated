@@ -1,5 +1,5 @@
-"""Service layer orchestrating ELM leave operations, validations, and balance updates."""
-from datetime import date
+"""Service layer orchestrating ELM leave operations, validations, extensions, resumptions, and SLAs."""
+from datetime import date, timedelta
 from django.db import transaction
 from django.utils import timezone
 
@@ -37,6 +37,8 @@ from modules.elm.domain.state_machine import (
     process_sanction_action,
     can_withdraw,
     can_request_cancellation,
+    can_request_extension,
+    can_submit_resumption,
 )
 from modules.elm.selectors.leaves import (
     get_published_rh_dates,
@@ -122,6 +124,7 @@ def apply_for_leave(
     station_start_date: date | None = None,
     station_end_date: date | None = None,
     substitute_user_id: int | None = None,
+    is_director: bool = False,
 ) -> LeaveRequest:
     """Submit a leave application with complete validations and state transitions."""
     # 1. Category eligibility
@@ -163,7 +166,7 @@ def apply_for_leave(
     validate_no_overlap(start_date, end_date, half_day, existing_leaves)
 
     # 6. Substitute validation
-    if substitute_user_id:
+    if substitute_user_id and not is_director:
         sub_leaves = [
             (l[0], l[1]) for l in get_active_user_leaves(substitute_user_id)
         ]
@@ -172,8 +175,11 @@ def apply_for_leave(
     else:
         substitute_status = SubstituteStatus.NOT_APPLICABLE
 
-    # 7. Initial workflow status
-    initial_status = determine_initial_status(has_substitute=bool(substitute_user_id))
+    # 7. Initial workflow status (BR-EL-020 Director self-sanction)
+    initial_status = determine_initial_status(
+        has_substitute=bool(substitute_user_id and not is_director),
+        is_director=is_director,
+    )
 
     # 8. Create LeaveRequest
     leave_req = LeaveRequest.objects.create(
@@ -189,23 +195,27 @@ def apply_for_leave(
         station_contact=station_contact,
         station_start_date=station_start_date,
         station_end_date=station_end_date,
-        substitute_user_id=substitute_user_id,
+        substitute_user_id=None if is_director else substitute_user_id,
         substitute_status=substitute_status,
         current_status=initial_status,
+        final_decision_by_id=user_id if is_director else None,
     )
 
-    # 9. Update balance pending count
-    balance.pending += duration
-    balance.save(update_fields=["pending"])
+    # 9. Update balance
+    if is_director:
+        balance.consumed += duration
+    else:
+        balance.pending += duration
+    balance.save()
 
     # 10. Audit log
     LeaveActionHistory.objects.create(
         leave_request=leave_req,
         actor_id=user_id,
-        action="submit",
+        action="director_self_sanction" if is_director else "submit",
         previous_status="",
         new_status=initial_status,
-        remarks="Leave request submitted",
+        remarks="Self-sanctioned leave by Director" if is_director else "Leave request submitted",
     )
 
     return leave_req
@@ -252,13 +262,16 @@ def review_unit_head(
     actor_id: int,
     action: str,  # "approve", "reject", "recommend", "not_recommend"
     remarks: str = "",
+    has_establishment_step: bool = False,
 ) -> LeaveRequest:
     """Unit Head review / decision (BR-EL-016, BR-EL-017, UC-EL-003)."""
     leave_req = LeaveRequest.objects.select_for_update().get(id=leave_id)
     if leave_req.current_status != LeaveStatus.PENDING_UNIT_HEAD:
         raise ValidationError("Request is not awaiting Unit Head review.")
 
-    rec, new_status = process_unit_head_action(leave_req.category, action)
+    rec, new_status = process_unit_head_action(
+        leave_req.category, action, has_establishment_step=has_establishment_step
+    )
     prev_status = leave_req.current_status
 
     leave_req.unit_head_recommendation = rec
@@ -302,7 +315,7 @@ def decide_sanction(
 ) -> LeaveRequest:
     """Final Sanctioning Authority decision for higher-sanction leaves (UC-EL-005)."""
     leave_req = LeaveRequest.objects.select_for_update().get(id=leave_id)
-    if leave_req.current_status != LeaveStatus.PENDING_SANCTION:
+    if leave_req.current_status not in (LeaveStatus.PENDING_SANCTION, LeaveStatus.PENDING_ESTT):
         raise ValidationError("Request is not awaiting final sanction.")
 
     new_status = process_sanction_action(action)
@@ -434,6 +447,286 @@ def decide_cancellation(
     return leave_req
 
 
+# =========================================================================
+# PHASE 2 ENHANCEMENTS: EXTENSION, RESUMPTION, AND SLA ENGINE
+# =========================================================================
+
+@transaction.atomic
+def apply_leave_extension(
+    leave_id: int,
+    user_id: int,
+    extension_end_date: date,
+    reason: str,
+    today: date | None = None,
+) -> LeaveExtension:
+    """Apply for extension of ongoing EL/COL/VL (BR-EL-025, WF-EL-04, UC-EL-009)."""
+    today = today or date.today()
+    leave_req = LeaveRequest.objects.select_for_update().get(id=leave_id)
+    if leave_req.user_id != user_id:
+        raise ValidationError("You can only extend your own leave.")
+
+    if not can_request_extension(leave_req.current_status, leave_req.category, leave_req.start_date, today):
+        raise ValidationError("Extension is available only for ongoing EL, COL, or Vacation Leave.")
+
+    if extension_end_date <= leave_req.end_date:
+        raise ValidationError("Extension end date must be strictly after the current leave end date.")
+
+    # Incremental start date is end_date + 1 day
+    inc_start = leave_req.end_date + timedelta(days=1)
+    year = inc_start.year
+    closed_holidays = get_closed_holiday_dates(year)
+
+    duration = calculate_leave_days(
+        category=leave_req.category,
+        start_date=inc_start,
+        end_date=extension_end_date,
+        closed_holidays=closed_holidays,
+    )
+
+    # Check available balance
+    balance = LeaveBalance.objects.select_for_update().get(
+        user_id=user_id, year=year, category=leave_req.category
+    )
+    if balance.available_balance < duration:
+        raise ValidationError(
+            f"Insufficient {leave_req.category} balance for extension. Required: {duration}, Available: {balance.available_balance}"
+        )
+
+    ext = LeaveExtension.objects.create(
+        leave_request=leave_req,
+        start_date=inc_start,
+        end_date=extension_end_date,
+        duration_days=duration,
+        reason=reason,
+        status=LeaveExtension.ExtensionStatus.PENDING_UNIT_HEAD,
+    )
+
+    # Reserve balance in pending
+    balance.pending += duration
+    balance.save(update_fields=["pending"])
+
+    LeaveActionHistory.objects.create(
+        leave_request=leave_req,
+        actor_id=user_id,
+        action="extension_request",
+        previous_status=leave_req.current_status,
+        new_status=leave_req.current_status,
+        remarks=f"Extension requested to {extension_end_date} ({duration} additional days)",
+    )
+
+    return ext
+
+
+@transaction.atomic
+def review_leave_extension(
+    extension_id: int,
+    actor_id: int,
+    action: str,  # "approve" or "reject"
+    remarks: str = "",
+) -> LeaveExtension:
+    """Sanctioning decision for leave extension (BR-EL-025)."""
+    ext = LeaveExtension.objects.select_for_update().get(id=extension_id)
+    leave_req = ext.leave_request
+    year = ext.start_date.year
+
+    balance = LeaveBalance.objects.select_for_update().get(
+        user_id=leave_req.user_id, year=year, category=leave_req.category
+    )
+
+    if action == "approve":
+        ext.status = LeaveExtension.ExtensionStatus.APPROVED
+        # Post incremental days to original leave and move pending -> consumed
+        balance.pending = max(0.0, balance.pending - ext.duration_days)
+        balance.consumed += ext.duration_days
+        balance.save()
+
+        leave_req.end_date = ext.end_date
+        leave_req.duration_days += ext.duration_days
+        leave_req.save(update_fields=["end_date", "duration_days"])
+    elif action == "reject":
+        ext.status = LeaveExtension.ExtensionStatus.REJECTED
+        # Release pending reservation
+        balance.pending = max(0.0, balance.pending - ext.duration_days)
+        balance.save(update_fields=["pending"])
+    else:
+        raise ValidationError(f"Invalid extension decision: {action}")
+
+    ext.remarks = remarks
+    ext.save()
+
+    LeaveActionHistory.objects.create(
+        leave_request=leave_req,
+        actor_id=actor_id,
+        action=f"extension_{action}",
+        previous_status=leave_req.current_status,
+        new_status=leave_req.current_status,
+        remarks=remarks or f"Extension {action}ed",
+    )
+    return ext
+
+
+@transaction.atomic
+def submit_duty_resumption(
+    leave_id: int,
+    user_id: int,
+    actual_resumption_date: date,
+    today: date | None = None,
+) -> LeaveResumption:
+    """Employee declares actual return to duty after EL/COL/VL (BR-EL-027, WF-EL-05, UC-EL-010)."""
+    today = today or date.today()
+    leave_req = LeaveRequest.objects.select_for_update().get(id=leave_id)
+    if leave_req.user_id != user_id:
+        raise ValidationError("You can only declare resumption for your own leave.")
+
+    if not can_submit_resumption(leave_req.current_status, leave_req.category, leave_req.start_date, today):
+        raise ValidationError("Duty resumption applies only to ongoing or approved EL, COL, or VL.")
+
+    # Determine resumption type
+    if actual_resumption_date == leave_req.end_date:
+        res_type = LeaveResumption.ResumptionType.NORMAL
+    elif actual_resumption_date < leave_req.end_date:
+        res_type = LeaveResumption.ResumptionType.EARLY
+    else:
+        res_type = LeaveResumption.ResumptionType.LATE
+
+    # Recalculate duration from start_date to actual_resumption_date
+    year = leave_req.start_date.year
+    closed_holidays = get_closed_holiday_dates(year)
+    adjusted_duration = calculate_leave_days(
+        category=leave_req.category,
+        start_date=leave_req.start_date,
+        end_date=actual_resumption_date,
+        closed_holidays=closed_holidays,
+    )
+
+    resumption, _ = LeaveResumption.objects.update_or_create(
+        leave_request=leave_req,
+        defaults={
+            "expected_date": leave_req.end_date,
+            "actual_resumption_date": actual_resumption_date,
+            "resumption_type": res_type,
+            "adjusted_duration_days": adjusted_duration,
+            "status": LeaveResumption.ResumptionStatus.SUBMITTED,
+        },
+    )
+
+    LeaveActionHistory.objects.create(
+        leave_request=leave_req,
+        actor_id=user_id,
+        action="resumption_declared",
+        previous_status=leave_req.current_status,
+        new_status=leave_req.current_status,
+        remarks=f"Duty resumed on {actual_resumption_date} ({res_type})",
+    )
+    return resumption
+
+
+@transaction.atomic
+def review_duty_resumption(
+    resumption_id: int,
+    reviewer_id: int,
+    remarks: str = "",
+) -> LeaveResumption:
+    """Sanctioning Authority reviews resumption and adjusts balance (BR-EL-028)."""
+    resumption = LeaveResumption.objects.select_for_update().get(id=resumption_id)
+    leave_req = resumption.leave_request
+    year = leave_req.start_date.year
+
+    balance = LeaveBalance.objects.select_for_update().get(
+        user_id=leave_req.user_id, year=year, category=leave_req.category
+    )
+
+    duration_diff = resumption.adjusted_duration_days - leave_req.duration_days
+
+    if resumption.resumption_type == LeaveResumption.ResumptionType.EARLY:
+        # Early resumption: return was earlier, so consumed days are reduced and restored
+        balance.consumed = max(0.0, balance.consumed + duration_diff)  # duration_diff is negative
+    elif resumption.resumption_type == LeaveResumption.ResumptionType.LATE:
+        # Late resumption: return was later, additional days deducted
+        balance.consumed += duration_diff
+    # For NORMAL, duration_diff is 0, no adjustment
+
+    balance.save(update_fields=["consumed"])
+
+    leave_req.end_date = resumption.actual_resumption_date
+    leave_req.duration_days = resumption.adjusted_duration_days
+    leave_req.save(update_fields=["end_date", "duration_days"])
+
+    resumption.status = LeaveResumption.ResumptionStatus.REVIEWED
+    resumption.reviewer_id = reviewer_id
+    resumption.reviewer_remarks = remarks
+    resumption.reviewed_at = timezone.now()
+    resumption.save()
+
+    LeaveActionHistory.objects.create(
+        leave_request=leave_req,
+        actor_id=reviewer_id,
+        action="resumption_reviewed",
+        previous_status=leave_req.current_status,
+        new_status=leave_req.current_status,
+        remarks=remarks or f"Resumption approved. Duration updated to {resumption.adjusted_duration_days}d",
+    )
+    return resumption
+
+
+@transaction.atomic
+def process_sla_thresholds() -> dict:
+    """Event-triggered SLA reminder and escalation sweep (BR-EL-032, BR-EL-033, BR-EL-038, UC-EL-021).
+
+    - If still pending past reminder_days: logs reminder notification.
+    - If still pending past escalation_days: escalates to higher authority and logs action.
+    """
+    cfg = get_or_create_policy()
+    now = timezone.now()
+    reminder_cutoff = now - timedelta(days=cfg.sla_reminder_days)
+    escalation_cutoff = now - timedelta(days=cfg.sla_escalation_days)
+
+    pending_statuses = [
+        LeaveStatus.PENDING_SUBSTITUTE,
+        LeaveStatus.PENDING_UNIT_HEAD,
+        LeaveStatus.PENDING_ESTT,
+        LeaveStatus.PENDING_SANCTION,
+    ]
+
+    reminded_count = 0
+    escalated_count = 0
+
+    pending_leaves = LeaveRequest.objects.filter(current_status__in=pending_statuses)
+
+    for leave in pending_leaves:
+        # Check escalation first
+        if leave.created_at <= escalation_cutoff:
+            if leave.current_status == LeaveStatus.PENDING_UNIT_HEAD:
+                leave.current_status = LeaveStatus.PENDING_SANCTION
+                leave.current_assignee_role = "director"
+                leave.save(update_fields=["current_status", "current_assignee_role"])
+                LeaveActionHistory.objects.create(
+                    leave_request=leave,
+                    actor_id=0,  # System
+                    action="sla_escalation",
+                    previous_status=LeaveStatus.PENDING_UNIT_HEAD,
+                    new_status=LeaveStatus.PENDING_SANCTION,
+                    remarks=f"Overdue task escalated past {cfg.sla_escalation_days} days threshold.",
+                )
+                escalated_count += 1
+        elif leave.created_at <= reminder_cutoff:
+            LeaveActionHistory.objects.create(
+                leave_request=leave,
+                actor_id=0,  # System
+                action="sla_reminder",
+                previous_status=leave.current_status,
+                new_status=leave.current_status,
+                remarks=f"SLA reminder issued to assignee ({leave.current_status}).",
+            )
+            reminded_count += 1
+
+    return {
+        "reminded_count": reminded_count,
+        "escalated_count": escalated_count,
+        "total_pending_checked": len(pending_leaves),
+    }
+
+
 @transaction.atomic
 def record_offline_leave(
     user_id: int,
@@ -482,12 +775,7 @@ def record_offline_leave(
 
 @transaction.atomic
 def process_year_end_rollover(user_id: int, year: int) -> dict:
-    """Event-triggered year-end leave balance rollover (BR-EL-002..009, UC-EL-020).
-
-    CL, RH, SCL: unused balances lapse.
-    VL: unused faculty VL converts to EL at 2 VL : 1 EL.
-    EL, COL: unused balances carry forward into next year.
-    """
+    """Event-triggered year-end leave balance rollover (BR-EL-002..009, UC-EL-020)."""
     next_year = year + 1
     current_balances = {b.category: b for b in LeaveBalance.objects.filter(user_id=user_id, year=year)}
     cfg = get_or_create_policy()

@@ -2,6 +2,8 @@ import { http } from "../../../lib/http";
 import type {
   LeaveBalance,
   LeaveRequest,
+  LeaveExtension,
+  LeaveResumption,
   ApplyLeavePayload,
   HolidayItem,
   AcademicVacationItem,
@@ -53,6 +55,60 @@ export const elmApi = {
     return res.data;
   },
 
+  applyExtension: async (
+    leaveId: number,
+    extensionEndDate: string,
+    reason: string
+  ): Promise<LeaveExtension> => {
+    const res = await http.post<LeaveExtension>(`/elm/leaves/${leaveId}/extend/`, {
+      extension_end_date: extensionEndDate,
+      reason,
+    });
+    return res.data;
+  },
+
+  submitResumption: async (
+    leaveId: number,
+    actualResumptionDate: string
+  ): Promise<LeaveResumption> => {
+    const res = await http.post<LeaveResumption>(`/elm/leaves/${leaveId}/resume/`, {
+      actual_resumption_date: actualResumptionDate,
+    });
+    return res.data;
+  },
+
+  getExtensionQueue: async (): Promise<LeaveExtension[]> => {
+    const res = await http.get<LeaveExtension[]>("/elm/extensions/queue/");
+    return res.data;
+  },
+
+  reviewExtension: async (
+    id: number,
+    action: "approve" | "reject",
+    remarks: string = ""
+  ): Promise<LeaveExtension> => {
+    const res = await http.post<LeaveExtension>(`/elm/extensions/${id}/review/`, {
+      action,
+      remarks,
+    });
+    return res.data;
+  },
+
+  getResumptionQueue: async (): Promise<LeaveResumption[]> => {
+    const res = await http.get<LeaveResumption[]>("/elm/resumptions/queue/");
+    return res.data;
+  },
+
+  reviewResumption: async (
+    id: number,
+    remarks: string = ""
+  ): Promise<LeaveResumption> => {
+    const res = await http.post<LeaveResumption>(`/elm/resumptions/${id}/review/`, {
+      remarks,
+    });
+    return res.data;
+  },
+
   getSubstituteQueue: async (): Promise<LeaveRequest[]> => {
     const res = await http.get<LeaveRequest[]>("/elm/substitute/queue/");
     return res.data;
@@ -88,6 +144,15 @@ export const elmApi = {
       { action, remarks },
       { params: { stage } }
     );
+    return res.data;
+  },
+
+  processSlaSweep: async (): Promise<{
+    reminded_count: number;
+    escalated_count: number;
+    total_pending_checked: number;
+  }> => {
+    const res = await http.post("/elm/admin/process-sla/");
     return res.data;
   },
 

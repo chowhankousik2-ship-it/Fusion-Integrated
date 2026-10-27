@@ -36,6 +36,35 @@ export interface LeaveActionHistory {
   created_at: string;
 }
 
+export interface LeaveExtension {
+  id: number;
+  leave_request_id: number;
+  start_date: string;
+  end_date: string;
+  duration_days: number;
+  reason: string;
+  substitute_user_id: number | null;
+  substitute_status: SubstituteStatusType;
+  status: "pending_substitute" | "pending_unit_head" | "pending_sanction" | "approved" | "rejected";
+  unit_head_recommendation: string;
+  remarks: string;
+  created_at: string;
+}
+
+export interface LeaveResumption {
+  id: number;
+  leave_request_id: number;
+  expected_date: string;
+  actual_resumption_date: string;
+  resumption_type: "normal" | "early" | "late";
+  adjusted_duration_days: number;
+  status: "submitted" | "reviewed";
+  reviewer_id: number | null;
+  reviewer_remarks: string;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
 export interface LeaveRequest {
   id: number;
   user_id: number;
@@ -68,6 +97,8 @@ export interface LeaveRequest {
   created_at: string;
   updated_at: string;
   actions?: LeaveActionHistory[];
+  extensions?: LeaveExtension[];
+  resumption?: LeaveResumption | null;
 }
 
 export interface ApplyLeavePayload {

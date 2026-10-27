@@ -21,6 +21,8 @@ from modules.elm.domain.state_machine import (
     process_sanction_action,
     can_withdraw,
     can_request_cancellation,
+    can_request_extension,
+    can_submit_resumption,
 )
 
 
@@ -117,6 +119,14 @@ class TestELMStateMachine(unittest.TestCase):
         self.assertEqual(determine_initial_status(has_substitute=True), "pending_substitute")
         self.assertEqual(determine_initial_status(has_substitute=False), "pending_unit_head")
 
+    def test_director_self_sanction(self):
+        """BR-EL-020: Director applicant follows self-sanction rule (immediately approved)."""
+        status = determine_initial_status(has_substitute=False, is_director=True)
+        self.assertEqual(status, "approved")
+
+        status_with_sub = determine_initial_status(has_substitute=True, is_director=True)
+        self.assertEqual(status_with_sub, "approved")
+
     def test_substitute_consent_progression(self):
         sub_status, wf_status = process_substitute_action("accept")
         self.assertEqual(sub_status, "accepted")
@@ -135,7 +145,7 @@ class TestELMStateMachine(unittest.TestCase):
         self.assertEqual(status, "rejected")
 
     def test_unit_head_recommendation_for_higher_sanction(self):
-        """BR-EL-017: Unit Head records recommended/not recommended for SCL, EL, COL, VL."""
+        """BR-EL-017, BR-EL-019: Unit Head records recommended/not recommended for SCL, EL, COL, VL."""
         for cat in ("SCL", "EL", "COL", "VL"):
             rec, status = process_unit_head_action(cat, "recommend")
             self.assertEqual(rec, "recommended")
@@ -144,6 +154,10 @@ class TestELMStateMachine(unittest.TestCase):
             rec, status = process_unit_head_action(cat, "not_recommend")
             self.assertEqual(rec, "not_recommended")
             self.assertEqual(status, "pending_sanction")
+
+        # Test establishment routing step
+        rec, estt_status = process_unit_head_action("EL", "recommend", has_establishment_step=True)
+        self.assertEqual(estt_status, "pending_estt")
 
     def test_withdrawal_and_cancellation_rules(self):
         """BR-EL-022, BR-EL-023: Immediate withdrawal while pending; cancellation only before start."""
@@ -155,6 +169,19 @@ class TestELMStateMachine(unittest.TestCase):
         today = date(2026, 11, 1)
         self.assertTrue(can_request_cancellation("approved", start_date=date(2026, 11, 5), today=today))
         self.assertFalse(can_request_cancellation("approved", start_date=date(2026, 10, 30), today=today))
+
+    def test_extension_and_resumption_predicates(self):
+        """BR-EL-025, BR-EL-027: Ongoing EL/COL/VL extensions and resumptions."""
+        today = date(2026, 11, 10)
+        # Ongoing leave: started on 2026-11-05
+        self.assertTrue(can_request_extension("approved", "EL", start_date=date(2026, 11, 5), today=today))
+        self.assertFalse(can_request_extension("approved", "CL", start_date=date(2026, 11, 5), today=today))
+        # Not yet started
+        self.assertFalse(can_request_extension("approved", "EL", start_date=date(2026, 11, 15), today=today))
+
+        # Resumption predicate
+        self.assertTrue(can_submit_resumption("approved", "EL", start_date=date(2026, 11, 5), today=today))
+        self.assertFalse(can_submit_resumption("approved", "CL", start_date=date(2026, 11, 5), today=today))
 
 
 if __name__ == "__main__":

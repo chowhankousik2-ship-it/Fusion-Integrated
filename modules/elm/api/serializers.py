@@ -46,8 +46,47 @@ class LeaveActionHistorySerializer(serializers.ModelSerializer):
         ]
 
 
+class LeaveExtensionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveExtension
+        fields = [
+            "id",
+            "leave_request_id",
+            "start_date",
+            "end_date",
+            "duration_days",
+            "reason",
+            "substitute_user_id",
+            "substitute_status",
+            "status",
+            "unit_head_recommendation",
+            "remarks",
+            "created_at",
+        ]
+
+
+class LeaveResumptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveResumption
+        fields = [
+            "id",
+            "leave_request_id",
+            "expected_date",
+            "actual_resumption_date",
+            "resumption_type",
+            "adjusted_duration_days",
+            "status",
+            "reviewer_id",
+            "reviewer_remarks",
+            "reviewed_at",
+            "created_at",
+        ]
+
+
 class LeaveRequestSerializer(serializers.ModelSerializer):
     actions = LeaveActionHistorySerializer(many=True, read_only=True)
+    extensions = LeaveExtensionSerializer(many=True, read_only=True)
+    resumption = LeaveResumptionSerializer(read_only=True)
 
     class Meta:
         model = LeaveRequest
@@ -83,6 +122,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "actions",
+            "extensions",
+            "resumption",
         ]
         read_only_fields = [
             "id",
@@ -95,6 +136,8 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "actions",
+            "extensions",
+            "resumption",
         ]
 
 
@@ -121,6 +164,20 @@ class SubstituteActionSerializer(serializers.Serializer):
 
 class ApprovalActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=["approve", "reject", "recommend", "not_recommend"])
+    remarks = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class LeaveExtensionCreateSerializer(serializers.Serializer):
+    extension_end_date = serializers.DateField()
+    reason = serializers.CharField(max_length=2000)
+
+
+class ResumptionSubmitSerializer(serializers.Serializer):
+    actual_resumption_date = serializers.DateField()
+
+
+class ReviewDecisionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["approve", "reject"])
     remarks = serializers.CharField(required=False, allow_blank=True, default="")
 
 

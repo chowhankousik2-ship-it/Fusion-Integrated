@@ -10,6 +10,7 @@ import {
   Stack,
   Table,
   Text,
+  TextInput,
   Textarea,
   ThemeIcon,
   Title,
@@ -24,6 +25,8 @@ import {
   FaUndo,
   FaBan,
   FaPrint,
+  FaArrowRight,
+  FaCheckCircle,
 } from "react-icons/fa";
 
 import { PageHeader } from "../../../ui/components/PageHeader";
@@ -43,6 +46,15 @@ export default function MyLeavesPage() {
   const [cancelRemarks, setCancelRemarks] = useState("");
   const [detailTarget, setDetailTarget] = useState<LeaveRequest | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Extension Modal
+  const [extendTarget, setExtendTarget] = useState<LeaveRequest | null>(null);
+  const [extensionEndDate, setExtensionEndDate] = useState("");
+  const [extensionReason, setExtensionReason] = useState("");
+
+  // Resumption Modal
+  const [resumeTarget, setResumeTarget] = useState<LeaveRequest | null>(null);
+  const [actualResumeDate, setActualResumeDate] = useState("");
 
   const fetchData = async () => {
     setLoading(true);
@@ -113,6 +125,69 @@ export default function MyLeavesPage() {
     }
   };
 
+  const handleExtension = async () => {
+    if (!extendTarget || !extensionEndDate || !extensionReason.trim()) {
+      notifications.show({
+        title: "Validation Error",
+        message: "Extension end date and reason are required.",
+        color: "red",
+      });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await elmApi.applyExtension(extendTarget.id, extensionEndDate, extensionReason);
+      notifications.show({
+        title: "Extension Submitted",
+        message: `Extension request submitted for Leave #${extendTarget.id}.`,
+        color: "green",
+      });
+      setExtendTarget(null);
+      setExtensionEndDate("");
+      setExtensionReason("");
+      fetchData();
+    } catch (err: unknown) {
+      notifications.show({
+        title: "Extension Error",
+        message: err instanceof Error ? err.message : "Failed to request extension.",
+        color: "red",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResumption = async () => {
+    if (!resumeTarget || !actualResumeDate) {
+      notifications.show({
+        title: "Validation Error",
+        message: "Actual resumption date is required.",
+        color: "red",
+      });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await elmApi.submitResumption(resumeTarget.id, actualResumeDate);
+      notifications.show({
+        title: "Resumption Declared",
+        message: `Duty resumption declaration recorded for Leave #${resumeTarget.id}.`,
+        color: "green",
+      });
+      setResumeTarget(null);
+      setActualResumeDate("");
+      fetchData();
+    } catch (err: unknown) {
+      notifications.show({
+        title: "Resumption Error",
+        message: err instanceof Error ? err.message : "Failed to declare resumption.",
+        color: "red",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const statusColor = (status: string) => {
     switch (status) {
       case "approved":
@@ -142,6 +217,15 @@ export default function MyLeavesPage() {
     return start > today;
   };
 
+  const canExtendOrResume = (leave: LeaveRequest) => {
+    if (leave.current_status !== "approved") return false;
+    if (!["EL", "COL", "VL"].includes(leave.category)) return false;
+    const start = new Date(leave.start_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today >= start;
+  };
+
   if (loading) {
     return (
       <Container size="xl" py="lg">
@@ -156,7 +240,7 @@ export default function MyLeavesPage() {
     <Container size="xl" py="lg">
       <PageHeader
         title="Employee Leave Management"
-        subtitle="Manage your leave entitlements, applications, and approvals."
+        subtitle="Manage your leave entitlements, applications, extensions, and duty resumptions."
         action={
           <Button component={Link} to="/elm/apply" leftSection={<FaPlus />}>
             Apply for Leave
@@ -320,6 +404,35 @@ export default function MyLeavesPage() {
                           Cancel
                         </Button>
                       )}
+                      {canExtendOrResume(l) && (
+                        <>
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="blue"
+                            leftSection={<FaArrowRight size={10} />}
+                            onClick={() => {
+                              setExtendTarget(l);
+                              setExtensionEndDate("");
+                              setExtensionReason("");
+                            }}
+                          >
+                            Extend
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="teal"
+                            leftSection={<FaCheckCircle size={10} />}
+                            onClick={() => {
+                              setResumeTarget(l);
+                              setActualResumeDate(l.end_date);
+                            }}
+                          >
+                            Resume
+                          </Button>
+                        </>
+                      )}
                     </Group>
                   </Table.Td>
                 </Table.Tr>
@@ -376,13 +489,24 @@ export default function MyLeavesPage() {
               </>
             )}
 
-            {detailTarget.unit_head_remarks && (
+            {detailTarget.resumption && (
               <>
                 <Text fw={700} mt="xs">
-                  Unit Head Remarks:
+                  Duty Resumption Record:
                 </Text>
-                <Card withBorder bg="gray.0" padding="xs">
-                  <Text size="sm">{detailTarget.unit_head_remarks}</Text>
+                <Card withBorder bg="teal.0" padding="xs">
+                  <Text size="sm">
+                    <strong>Actual Date:</strong> {detailTarget.resumption.actual_resumption_date} (
+                    {detailTarget.resumption.resumption_type})
+                  </Text>
+                  <Text size="sm">
+                    <strong>Status:</strong> {detailTarget.resumption.status}
+                  </Text>
+                  {detailTarget.resumption.reviewer_remarks && (
+                    <Text size="sm">
+                      <strong>Remarks:</strong> {detailTarget.resumption.reviewer_remarks}
+                    </Text>
+                  )}
                 </Card>
               </>
             )}
@@ -425,6 +549,71 @@ export default function MyLeavesPage() {
             </Group>
           </Stack>
         )}
+      </Modal>
+
+      {/* Extension Modal */}
+      <Modal
+        opened={Boolean(extendTarget)}
+        onClose={() => setExtendTarget(null)}
+        title={`Request Extension for Leave #${extendTarget?.id}`}
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            Current Leave Ends on: <strong>{extendTarget?.end_date}</strong>. Extension applies to
+            ongoing EL, COL, or Vacation Leave.
+          </Text>
+          <TextInput
+            type="date"
+            label="New Extended End Date"
+            required
+            value={extensionEndDate}
+            onChange={(e) => setExtensionEndDate(e.currentTarget.value)}
+          />
+          <Textarea
+            label="Reason for Extension"
+            placeholder="State why additional leave days are required"
+            required
+            value={extensionReason}
+            onChange={(e) => setExtensionReason(e.currentTarget.value)}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setExtendTarget(null)}>
+              Cancel
+            </Button>
+            <Button color="blue" loading={actionLoading} onClick={handleExtension}>
+              Submit Extension Request
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Resumption Modal */}
+      <Modal
+        opened={Boolean(resumeTarget)}
+        onClose={() => setResumeTarget(null)}
+        title={`Declare Duty Resumption for Leave #${resumeTarget?.id}`}
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            Approved End Date was: <strong>{resumeTarget?.end_date}</strong>. Declaring actual date
+            of return synchronizes your attendance and initiates Sanction review.
+          </Text>
+          <TextInput
+            type="date"
+            label="Actual Duty Resumption Date"
+            required
+            value={actualResumeDate}
+            onChange={(e) => setActualResumeDate(e.currentTarget.value)}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setResumeTarget(null)}>
+              Cancel
+            </Button>
+            <Button color="teal" loading={actionLoading} onClick={handleResumption}>
+              Declare Resumption
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
 
       {/* Withdraw Modal */}

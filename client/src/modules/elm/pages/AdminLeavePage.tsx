@@ -15,7 +15,7 @@ import {
   Alert,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { FaSyncAlt, FaFileSignature } from "react-icons/fa";
+import { FaSyncAlt, FaFileSignature, FaBell } from "react-icons/fa";
 
 import { PageHeader } from "../../../ui/components/PageHeader";
 import { elmApi } from "../api/elmApi";
@@ -38,6 +38,14 @@ export default function AdminLeavePage() {
   const [rolloverYear, setRolloverYear] = useState<number | string>(new Date().getFullYear());
   const [runningRollover, setRunningRollover] = useState(false);
   const [rolloverResult, setRolloverResult] = useState<Record<string, unknown> | null>(null);
+
+  // SLA sweep state
+  const [runningSla, setRunningSla] = useState(false);
+  const [slaResult, setSlaResult] = useState<{
+    reminded_count: number;
+    escalated_count: number;
+    total_pending_checked: number;
+  } | null>(null);
 
   const handleRecordOffline = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +77,6 @@ export default function AdminLeavePage() {
         color: "green",
       });
 
-      // Clear fields
       setOfflineRef("");
       setOfflineRemarks("");
     } catch (err: unknown) {
@@ -117,11 +124,33 @@ export default function AdminLeavePage() {
     }
   };
 
+  const handleRunSlaSweep = async () => {
+    setRunningSla(true);
+    setSlaResult(null);
+    try {
+      const res = await elmApi.processSlaSweep();
+      setSlaResult(res);
+      notifications.show({
+        title: "SLA Sweep Executed",
+        message: `Checked ${res.total_pending_checked} pending tasks (${res.reminded_count} reminded, ${res.escalated_count} escalated).`,
+        color: "blue",
+      });
+    } catch (err: unknown) {
+      notifications.show({
+        title: "SLA Sweep Failed",
+        message: err instanceof Error ? err.message : "Failed to execute SLA sweep.",
+        color: "red",
+      });
+    } finally {
+      setRunningSla(false);
+    }
+  };
+
   return (
     <Container size="xl" py="lg">
       <PageHeader
-        title="Leave Administration & Offline Synchronization"
-        subtitle="Record authorized offline-sanctioned leave and execute annual boundary rollovers."
+        title="Leave Administration & SLA Engine"
+        subtitle="Manage offline records, trigger annual boundary rollovers, and execute SLA sweeps."
       />
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
@@ -210,61 +239,98 @@ export default function AdminLeavePage() {
           </form>
         </Card>
 
-        {/* Year-End Rollover */}
-        <Card withBorder radius="md">
-          <Group mb="xs">
-            <FaSyncAlt size={20} color="#1c7ed6" />
-            <Title order={4}>Event-Triggered Year-End Rollover</Title>
-          </Group>
-          <Text size="xs" c="dimmed" mb="md">
-            (BR-EL-002..009, UC-EL-020: Lapses unused CL/RH/SCL, converts unused faculty VL to EL
-            at 2 VL : 1 EL, and carries forward EL and COL balances into the next year.)
-          </Text>
+        {/* Year-End Rollover & SLA Engine */}
+        <Stack gap="lg">
+          <Card withBorder radius="md">
+            <Group mb="xs">
+              <FaSyncAlt size={20} color="#1c7ed6" />
+              <Title order={4}>Event-Triggered Year-End Rollover</Title>
+            </Group>
+            <Text size="xs" c="dimmed" mb="md">
+              (BR-EL-002..009, UC-EL-020: Lapses unused CL/RH/SCL, converts unused faculty VL to EL
+              at 2 VL : 1 EL, and carries forward EL and COL balances into the next year.)
+            </Text>
 
-          <Stack gap="sm">
-            <NumberInput
-              label="Target Employee User ID"
-              placeholder="e.g. 101"
-              required
-              value={rolloverUserId}
-              onChange={(v) => setRolloverUserId(v)}
-              min={1}
-            />
+            <Stack gap="sm">
+              <NumberInput
+                label="Target Employee User ID"
+                placeholder="e.g. 101"
+                required
+                value={rolloverUserId}
+                onChange={(v) => setRolloverUserId(v)}
+                min={1}
+              />
 
-            <NumberInput
-              label="Boundary Year (Ending Year)"
-              placeholder="e.g. 2026"
-              required
-              value={rolloverYear}
-              onChange={(v) => setRolloverYear(v)}
-              min={2020}
-            />
+              <NumberInput
+                label="Boundary Year (Ending Year)"
+                placeholder="e.g. 2026"
+                required
+                value={rolloverYear}
+                onChange={(v) => setRolloverYear(v)}
+                min={2020}
+              />
+
+              <Button
+                color="teal"
+                loading={runningRollover}
+                leftSection={<FaSyncAlt />}
+                onClick={handleRunRollover}
+                mt="sm"
+              >
+                Trigger Year-End Processing
+              </Button>
+
+              {rolloverResult && (
+                <Alert color="teal" title="Processing Completed" mt="md">
+                  <Text size="sm">
+                    <strong>Converted VL to EL:</strong> {String(rolloverResult.converted_el_from_vl)} days
+                  </Text>
+                  <Text size="sm">
+                    <strong>Carried Forward EL:</strong> {String(rolloverResult.carried_forward_el)} days
+                  </Text>
+                  <Text size="sm">
+                    <strong>Carried Forward COL:</strong> {String(rolloverResult.carried_forward_col)} days
+                  </Text>
+                </Alert>
+              )}
+            </Stack>
+          </Card>
+
+          {/* SLA Threshold Processor */}
+          <Card withBorder radius="md">
+            <Group mb="xs">
+              <FaBell size={20} color="#f59f00" />
+              <Title order={4}>SLA Threshold Reminder & Escalation Sweep</Title>
+            </Group>
+            <Text size="xs" c="dimmed" mb="md">
+              (BR-EL-032, BR-EL-033, BR-EL-038, UC-EL-021: Automatically identifies overdue pending
+              tasks, issues reminder logs at 3 days, and executes automatic escalation at 7 days.)
+            </Text>
 
             <Button
-              color="teal"
-              loading={runningRollover}
-              leftSection={<FaSyncAlt />}
-              onClick={handleRunRollover}
-              mt="sm"
+              color="orange"
+              loading={runningSla}
+              leftSection={<FaBell />}
+              onClick={handleRunSlaSweep}
             >
-              Trigger Year-End Processing
+              Execute SLA Sweep
             </Button>
 
-            {rolloverResult && (
-              <Alert color="teal" title="Processing Completed" mt="md">
+            {slaResult && (
+              <Alert color="blue" title="SLA Sweep Results" mt="md">
                 <Text size="sm">
-                  <strong>Converted VL to EL:</strong> {String(rolloverResult.converted_el_from_vl)} days
+                  <strong>Pending Tasks Checked:</strong> {slaResult.total_pending_checked}
                 </Text>
                 <Text size="sm">
-                  <strong>Carried Forward EL:</strong> {String(rolloverResult.carried_forward_el)} days
+                  <strong>Reminders Issued:</strong> {slaResult.reminded_count}
                 </Text>
                 <Text size="sm">
-                  <strong>Carried Forward COL:</strong> {String(rolloverResult.carried_forward_col)} days
+                  <strong>Tasks Escalated:</strong> {slaResult.escalated_count}
                 </Text>
               </Alert>
             )}
-          </Stack>
-        </Card>
+          </Card>
+        </Stack>
       </SimpleGrid>
     </Container>
   );
