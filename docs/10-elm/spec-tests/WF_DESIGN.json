@@ -1,0 +1,155 @@
+[
+  {
+    "test_id": "SPEC-WF-001",
+    "source_id": "CW-EL-01 path-cl-substitute-accept-unit-head-approve",
+    "purpose": "Verify standard success path for CL: Apply -> Substitute Accepts -> Unit Head Approves -> Sanctioned",
+    "preconditions": "Employee with CL balance, eligible substitute, assigned Unit Head",
+    "action_or_input": "Apply for CL, substitute accepts, Unit Head sanctions",
+    "expected_result": "Final status is SANCTIONED, balance debited",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-002",
+    "source_id": "CW-EL-01 path-substitute-decline-and-renominate-flow",
+    "purpose": "Verify substitute decline path: Apply -> Substitute Declines -> Applicant Renominates -> New Substitute Accepts -> Approved",
+    "preconditions": "Leave application in PENDING_SUBSTITUTE",
+    "action_or_input": "Substitute declines, applicant renominates substitute 2, substitute 2 accepts, Unit Head approves",
+    "expected_result": "Final status is SANCTIONED after successful renomination and approval",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-003",
+    "source_id": "CW-EL-01 path-unit-head-rejection-flow",
+    "purpose": "Verify rejection path at Unit Head: Apply -> Substitute Accepts -> Unit Head Rejects",
+    "preconditions": "CL application in PENDING_APPROVAL",
+    "action_or_input": "Unit Head issues rejection decision with remarks",
+    "expected_result": "Status is REJECTED, reserved balance is unlocked",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-004",
+    "source_id": "CW-EL-01 path-higher-sanction-complete-flow",
+    "purpose": "Verify higher sanction flow: Apply EL -> Substitute Accepts -> Unit Head Recommends -> Admin Verifies -> Higher Authority Sanctions",
+    "preconditions": "Employee applying for EL requiring higher sanction",
+    "action_or_input": "Follow full higher sanction chain to approval",
+    "expected_result": "Status transitions to SANCTIONED after Director/Dean approval",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-005",
+    "source_id": "CW-EL-01 path-higher-sanction-rejection-flow",
+    "purpose": "Verify higher authority rejection: Unit Head Recommends -> Higher Authority Rejects",
+    "preconditions": "Request in PENDING_HIGHER_SANCTION",
+    "action_or_input": "Higher authority issues rejection",
+    "expected_result": "Status is REJECTED",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-006",
+    "source_id": "CW-EL-01 path-applicant-pending-withdrawal",
+    "purpose": "Verify applicant withdrawal path while request is in PENDING_SUBSTITUTE or PENDING_APPROVAL",
+    "preconditions": "Request is pending review",
+    "action_or_input": "Applicant issues withdrawal command",
+    "expected_result": "Status transitions immediately to WITHDRAWN and workflow terminates",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-007",
+    "source_id": "CW-EL-01 path-director-self-sanction-flow",
+    "purpose": "Verify Director self-sanction flow: Director Applies -> Auto/Self-Sanctioned without routing to subordinate",
+    "preconditions": "Applicant has Director role",
+    "action_or_input": "Director submits leave application",
+    "expected_result": "Status transitions directly to SANCTIONED",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-008",
+    "source_id": "CW-EL-02 path-cancellation-full-approval-flow",
+    "purpose": "Verify cancellation workflow: Approved Leave -> Applicant Requests Cancellation -> Authority Approves -> Cancelled",
+    "preconditions": "Approved future leave exists",
+    "action_or_input": "Applicant submits cancellation, sanctioning authority approves cancellation",
+    "expected_result": "Status transitions to CANCELLED and leave balance restored",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-009",
+    "source_id": "CW-EL-02 path-cancellation-rejection-flow",
+    "purpose": "Verify cancellation rejection: Authority rejects cancellation request",
+    "preconditions": "Cancellation request pending review",
+    "action_or_input": "Authority rejects cancellation request",
+    "expected_result": "Original leave remains SANCTIONED and leave days remain debited",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-010",
+    "source_id": "CW-EL-03 path-extension-full-approval-flow",
+    "purpose": "Verify extension workflow: Ongoing Leave -> Applicant Submits Extension -> Unit Head Recommends -> Authority Sanctions",
+    "preconditions": "Ongoing approved EL/COL/VL",
+    "action_or_input": "Submit extension with new end date, obtain recommendation and sanction",
+    "expected_result": "Extension approved, leave end date updated, additional days debited",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-011",
+    "source_id": "CW-EL-03 path-extension-rejection-flow",
+    "purpose": "Verify extension rejection path",
+    "preconditions": "Extension request pending approval",
+    "action_or_input": "Approver rejects extension request",
+    "expected_result": "Extension status REJECTED; original leave end date remains unchanged",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-012",
+    "source_id": "CW-EL-04 path-resumption-normal-close-flow",
+    "purpose": "Verify standard duty resumption flow: Return from Leave -> Submit Resumption -> Unit Head Approves -> Closed",
+    "preconditions": "Sanctioned leave finished on schedule",
+    "action_or_input": "Submit resumption on scheduled return date, Unit Head approves",
+    "expected_result": "Resumption status APPROVED, leave record closed",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-013",
+    "source_id": "CW-EL-04 path-resumption-early-balance-restoration-flow",
+    "purpose": "Verify early resumption flow: Return Early -> Submit Early Resumption -> Unit Head Approves -> Balance Credited",
+    "preconditions": "Sanctioned leave ongoing; employee reports early",
+    "action_or_input": "Submit early resumption with actual reporting date, Unit Head approves",
+    "expected_result": "Leave period truncated to actual return date, unused balance credited back",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-014",
+    "source_id": "CW-EL-04 path-resumption-late-regularization-flow",
+    "purpose": "Verify late resumption flow: Return Late -> Submit Late Resumption -> Flagged for Regularization",
+    "preconditions": "Employee returns after sanctioned end date",
+    "action_or_input": "Submit late resumption report",
+    "expected_result": "Resumption recorded with late status flag requiring administrative regularization",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-015",
+    "source_id": "WF-EL-06 path-record-offline-sanction-flow",
+    "purpose": "Verify offline sanction recording workflow by Admin/Establishment",
+    "preconditions": "Authorized Admin user",
+    "action_or_input": "Submit offline sanction record with paper order details and past dates",
+    "expected_result": "Offline record stored, status is SANCTIONED, balance updated, audit log created",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-016",
+    "source_id": "WF-EL-07 path-year-end-rollover-flow",
+    "purpose": "Verify year-end rollover batch workflow",
+    "preconditions": "End of calendar year reached",
+    "action_or_input": "Execute year-end rollover job",
+    "expected_result": "All employee CL balances lapsed to 0; faculty VL converted to EL at 2:1 up to 300 cap",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-WF-017",
+    "source_id": "WF-EL-08 path-sla-reminder-and-escalation-flow",
+    "purpose": "Verify SLA scheduled workflow: Scan Pending Tasks -> Dispatch Reminder -> Dispatch Escalation upon further delay",
+    "preconditions": "Pending task exceeds reminder threshold and subsequently escalation threshold",
+    "action_or_input": "Run SLA event processing job",
+    "expected_result": "Generates SLA reminder and escalation notifications according to configured hours",
+    "test_type": "functional"
+  }
+]

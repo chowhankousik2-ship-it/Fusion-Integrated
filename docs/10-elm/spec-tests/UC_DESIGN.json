@@ -1,0 +1,335 @@
+[
+  {
+    "test_id": "SPEC-UC-001",
+    "source_id": "EL-UC-001 Main Flow",
+    "purpose": "Verify employee successfully submits a valid leave application with substitute nomination",
+    "preconditions": "Active employee with sufficient balance, valid dates, and eligible substitute",
+    "action_or_input": "Submit leave application for CL with substitute nominated",
+    "expected_result": "Leave application created with status PENDING_SUBSTITUTE",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-002",
+    "source_id": "EL-UC-001 Alternative A1 station-leave-included",
+    "purpose": "Verify employee successfully applies for leave with embedded station leave details",
+    "preconditions": "Active employee applying for leave with outstation travel",
+    "action_or_input": "Submit leave request with station leave address and contact details",
+    "expected_result": "Application created with station leave details coupled to the same record",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-003",
+    "source_id": "EL-UC-001 Exception E1 insufficient-balance",
+    "purpose": "Verify application rejection when applicant has insufficient leave balance",
+    "preconditions": "Employee has 0 days balance in requested category",
+    "action_or_input": "Submit leave application",
+    "expected_result": "Submission blocked with 422 Unprocessable Entity due to insufficient balance",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-004",
+    "source_id": "EL-UC-001 Exception E2 date-overlap-detected",
+    "purpose": "Verify application rejection when dates overlap with an active existing leave",
+    "preconditions": "Employee has active leave on requested dates",
+    "action_or_input": "Submit overlapping leave application",
+    "expected_result": "Submission blocked with 422 Unprocessable Entity due to date collision",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-005",
+    "source_id": "EL-UC-001 Exception E3 ineligible-substitute",
+    "purpose": "Verify application rejection when nominated substitute is ineligible or self-nominated",
+    "preconditions": "Applicant nominates self or employee currently on leave",
+    "action_or_input": "Submit leave application with invalid substitute",
+    "expected_result": "Submission blocked with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-006",
+    "source_id": "EL-UC-002 Main Flow substitute-consent-accept",
+    "purpose": "Verify nominated substitute accepts the request and forwards to Unit Head",
+    "preconditions": "Leave request in PENDING_SUBSTITUTE state",
+    "action_or_input": "Nominated substitute consents/accepts request",
+    "expected_result": "Substitute status set to ACCEPTED and request advances to PENDING_APPROVAL",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-007",
+    "source_id": "EL-UC-002 Alternative A1 substitute-consent-decline",
+    "purpose": "Verify nominated substitute declines request and notifies applicant to renominate",
+    "preconditions": "Leave request in PENDING_SUBSTITUTE state",
+    "action_or_input": "Nominated substitute declines request with reason",
+    "expected_result": "Substitute status set to DECLINED; applicant notified to re-nominate",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-UC-008",
+    "source_id": "EL-UC-003 Main Flow unit-head-approve-cl",
+    "purpose": "Verify Unit Head approves CL/RH request as final authority",
+    "preconditions": "CL request in PENDING_APPROVAL assigned to Unit Head",
+    "action_or_input": "Unit Head approves the request",
+    "expected_result": "Request status transitions to APPROVED/SANCTIONED and balance is debited",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-009",
+    "source_id": "EL-UC-003 Alternative A1 unit-head-recommend-higher",
+    "purpose": "Verify Unit Head recommends EL/COL/VL/SCL request to higher sanctioning authority",
+    "preconditions": "EL request in PENDING_APPROVAL assigned to Unit Head",
+    "action_or_input": "Unit Head recommends request",
+    "expected_result": "Request status transitions to PENDING_HIGHER_SANCTION",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-UC-010",
+    "source_id": "EL-UC-003 Alternative A2 unit-head-reject",
+    "purpose": "Verify Unit Head rejects leave request with recorded remarks",
+    "preconditions": "Request in PENDING_APPROVAL assigned to Unit Head",
+    "action_or_input": "Unit Head rejects request with rejection remarks",
+    "expected_result": "Request status transitions to REJECTED and applicant balance lock is released",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-011",
+    "source_id": "EL-UC-004 Main Flow establishment-verification",
+    "purpose": "Verify Establishment Admin verifies admissibility of higher-sanction leave",
+    "preconditions": "Leave in PENDING_HIGHER_SANCTION awaiting administrative verification",
+    "action_or_input": "Establishment admin records admissibility verification check",
+    "expected_result": "Verification logged in action history and request advances to Sanctioning Authority",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-012",
+    "source_id": "EL-UC-005 Main Flow higher-authority-sanction",
+    "purpose": "Verify higher sanctioning authority (Director/Dean) grants final approval",
+    "preconditions": "Request recommended and pending higher sanction",
+    "action_or_input": "Sanctioning authority approves the request",
+    "expected_result": "Request transitions to SANCTIONED/APPROVED and balance officially debited",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-013",
+    "source_id": "EL-UC-005 Alternative A1 higher-authority-reject",
+    "purpose": "Verify higher sanctioning authority rejects request",
+    "preconditions": "Request pending higher sanction",
+    "action_or_input": "Sanctioning authority rejects the request with comments",
+    "expected_result": "Request transitions to REJECTED and balance reservation is restored",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-014",
+    "source_id": "EL-UC-006 Exception E1 modification-prohibited",
+    "purpose": "Verify modification of submitted request is prohibited per adjudication G-09 & BR-EL-034",
+    "preconditions": "Leave request already submitted",
+    "action_or_input": "Attempt to edit submitted request fields in-place",
+    "expected_result": "Action rejected with 405 Method Not Allowed or 422 Unprocessable Entity",
+    "test_type": "security"
+  },
+  {
+    "test_id": "SPEC-UC-015",
+    "source_id": "EL-UC-007 Main Flow withdraw-pending-leave",
+    "purpose": "Verify applicant withdraws pending leave request prior to final sanction",
+    "preconditions": "Leave request is currently pending (substitute or approval)",
+    "action_or_input": "Applicant submits withdrawal action",
+    "expected_result": "Status transitions immediately to WITHDRAWN; balance hold is cleared",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-016",
+    "source_id": "EL-UC-007 Exception E1 withdraw-already-approved-fails",
+    "purpose": "Verify applicant cannot withdraw an already approved leave request",
+    "preconditions": "Leave request is already in SANCTIONED/APPROVED status",
+    "action_or_input": "Applicant attempts withdrawal",
+    "expected_result": "Action refused with 422 Unprocessable Entity (must use cancellation instead)",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-017",
+    "source_id": "EL-UC-008 Main Flow cancel-approved-leave-before-start",
+    "purpose": "Verify applicant requests cancellation of approved leave before commencement date",
+    "preconditions": "Approved leave with start date in future",
+    "action_or_input": "Applicant submits cancellation request with reason",
+    "expected_result": "Cancellation request created and routed to sanctioning authority",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-018",
+    "source_id": "EL-UC-008 Alternative A1 cancellation-sanction-approved",
+    "purpose": "Verify sanctioning authority approves cancellation and restores leave balance",
+    "preconditions": "Cancellation request pending review",
+    "action_or_input": "Sanctioning authority approves cancellation",
+    "expected_result": "Leave transitions to CANCELLED and deducted days are credited back to balance",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-UC-019",
+    "source_id": "EL-UC-008 Exception E1 cancel-after-commencement-fails",
+    "purpose": "Verify cancellation is refused once leave period has already commenced",
+    "preconditions": "Leave start date is in past or current date",
+    "action_or_input": "Applicant attempts cancellation of ongoing/past leave",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-020",
+    "source_id": "EL-UC-009 Main Flow extend-ongoing-leave",
+    "purpose": "Verify applicant can request extension of ongoing EL/COL/VL before ongoing leave concludes",
+    "preconditions": "Ongoing approved EL/COL/VL; sufficient additional balance",
+    "action_or_input": "Applicant submits extension request with extended end date",
+    "expected_result": "Extension created and routed for recommendation/approval",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-021",
+    "source_id": "EL-UC-009 Exception E1 extend-cl-prohibited",
+    "purpose": "Verify extension request is prohibited for Casual Leave",
+    "preconditions": "Ongoing approved Casual Leave (CL)",
+    "action_or_input": "Submit extension request for CL",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-UC-022",
+    "source_id": "EL-UC-010 Main Flow submit-resumption-normal",
+    "purpose": "Verify employee submits duty resumption upon return from sanctioned leave on expected date",
+    "preconditions": "Employee completed sanctioned leave period",
+    "action_or_input": "Submit duty resumption report with joining date and session (FN/AN)",
+    "expected_result": "Resumption report created with status PENDING_REVIEW",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-023",
+    "source_id": "EL-UC-010 Alternative A1 submit-resumption-early",
+    "purpose": "Verify employee submits early duty resumption before leave scheduled end date",
+    "preconditions": "Ongoing sanctioned leave; employee returns before end date",
+    "action_or_input": "Submit early resumption report specifying earlier return date",
+    "expected_result": "Early resumption recorded and flagged for balance credit upon verification",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-UC-024",
+    "source_id": "EL-UC-010 Alternative A2 submit-resumption-late",
+    "purpose": "Verify late resumption flags overdue period for regularization",
+    "preconditions": "Sanctioned leave ended; employee reports back days later",
+    "action_or_input": "Submit late resumption report",
+    "expected_result": "Resumption accepted and flagged as late resumption requiring regularization",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-UC-025",
+    "source_id": "EL-UC-011 Main Flow review-and-accept-resumption",
+    "purpose": "Verify Unit Head reviews and accepts duty resumption report",
+    "preconditions": "Resumption report in PENDING_REVIEW state",
+    "action_or_input": "Unit Head approves resumption report",
+    "expected_result": "Resumption approved; leave record closed; unavailed days credited back if early",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-026",
+    "source_id": "EL-UC-012 Main Flow view-own-balances-and-history",
+    "purpose": "Verify employee can view their current leave balances and transaction history",
+    "preconditions": "Authenticated employee with leave account",
+    "action_or_input": "Fetch leave balance summary and application history via API",
+    "expected_result": "Returns 200 OK with accurate category balances, pending counts, and history records",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-027",
+    "source_id": "EL-UC-012 Exception E1 unauthenticated-access-refused",
+    "purpose": "Verify unauthenticated request cannot access leave balance data",
+    "preconditions": "Anonymous request without session/token",
+    "action_or_input": "Call leave balance endpoint",
+    "expected_result": "Request refused with 401 Unauthorized",
+    "test_type": "security"
+  },
+  {
+    "test_id": "SPEC-UC-028",
+    "source_id": "EL-UC-013 Main Flow export-leave-application-details",
+    "purpose": "Verify user can retrieve complete exportable details/printable format for an application",
+    "preconditions": "Valid leave application exists",
+    "action_or_input": "Fetch printable application view/export endpoint",
+    "expected_result": "Returns 200 OK with all application fields, approval history, and timestamps",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-029",
+    "source_id": "EL-UC-014 Main Flow admin-update-leave-policy",
+    "purpose": "Verify Admin can update leave entitlement and policy parameters",
+    "preconditions": "User holds Admin/Establishment role",
+    "action_or_input": "Update annual CL quota or max carry-forward limit",
+    "expected_result": "Returns 200 OK and updated policy parameters take effect",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-030",
+    "source_id": "EL-UC-014 Exception E1 non-admin-update-refused",
+    "purpose": "Verify non-admin cannot modify policy parameters",
+    "preconditions": "Standard employee without admin privileges",
+    "action_or_input": "Attempt to update leave policy configuration",
+    "expected_result": "Request refused with 403 Forbidden",
+    "test_type": "security"
+  },
+  {
+    "test_id": "SPEC-UC-031",
+    "source_id": "EL-UC-015 Main Flow admin-publish-holiday-calendar",
+    "purpose": "Verify Admin creates and publishes annual holiday and restricted holiday calendar",
+    "preconditions": "Authorized Admin user",
+    "action_or_input": "Create holiday entries and publish calendar for calendar year",
+    "expected_result": "Holiday entries published and accessible for leave calculations",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-032",
+    "source_id": "EL-UC-016 Main Flow record-offline-leave-entry",
+    "purpose": "Verify Admin records offline sanctioned leave with order reference and approver",
+    "preconditions": "Authorized Admin user recording offline paperwork approval",
+    "action_or_input": "Submit offline sanction record with employee ID, leave type, dates, reference number",
+    "expected_result": "Offline record created, employee balance debited, audit history logged",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-033",
+    "source_id": "EL-UC-017 Main Flow admin-view-all-departmental-records",
+    "purpose": "Verify Admin can list and search leave applications across departments",
+    "preconditions": "Authorized Admin user",
+    "action_or_input": "Query all leave records with department/status filters",
+    "expected_result": "Returns 200 OK with filtered list of leave requests",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-034",
+    "source_id": "EL-UC-018 Main Flow configure-workflow-sla-thresholds",
+    "purpose": "Verify Admin configures reminder and escalation SLA thresholds in hours",
+    "preconditions": "Authorized Admin user",
+    "action_or_input": "Configure reminder threshold=48h, escalation threshold=96h",
+    "expected_result": "Thresholds saved successfully and returned in config query",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-035",
+    "source_id": "EL-UC-019 Main Flow nominate-replacement-substitute",
+    "purpose": "Verify applicant nominates a new substitute after previous nominee declined",
+    "preconditions": "Leave request currently in PENDING_SUBSTITUTE with declined substitute",
+    "action_or_input": "Applicant submits replacement substitute ID",
+    "expected_result": "Substitute updated to new employee; status remains PENDING_SUBSTITUTE for new consent",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-036",
+    "source_id": "EL-UC-020 Main Flow year-end-rollover-execution",
+    "purpose": "Verify Admin or automated process triggers year-end rollover (CL lapse, VL-to-EL conversion, EL capping)",
+    "preconditions": "Calendar year end reached; employees have remaining balances",
+    "action_or_input": "Trigger year-end processing job",
+    "expected_result": "CL lapsed to 0, VL converted to EL at 2:1 up to 300 days cap, audit logs written",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-UC-037",
+    "source_id": "EL-UC-021 Main Flow process-sla-threshold-events",
+    "purpose": "Verify system scans pending tasks and creates reminders/escalations for overdue items",
+    "preconditions": "Pending task exceeds reminder or escalation threshold",
+    "action_or_input": "Trigger SLA scan process",
+    "expected_result": "Overdue tasks identified and corresponding SLA notifications dispatched",
+    "test_type": "positive"
+  }
+]

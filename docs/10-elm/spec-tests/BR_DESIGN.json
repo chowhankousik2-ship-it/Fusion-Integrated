@@ -1,0 +1,479 @@
+[
+  {
+    "test_id": "SPEC-BR-001",
+    "source_id": "BR-EL-001 category-eligible",
+    "purpose": "Verify employee can apply for an eligible leave category according to role/category policy",
+    "preconditions": "Active faculty member with configured leave entitlement parameters",
+    "action_or_input": "Submit leave request for Casual Leave (CL)",
+    "expected_result": "Leave request passes category validation successfully",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-002",
+    "source_id": "BR-EL-001 category-ineligible",
+    "purpose": "Verify employee cannot apply for a leave category not permitted for their employee class",
+    "preconditions": "Staff employee (non-faculty) who does not get Vacation Leave (VL)",
+    "action_or_input": "Submit leave request for Vacation Leave (VL)",
+    "expected_result": "Request is rejected with 422 Unprocessable Entity due to category ineligibility",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-003",
+    "source_id": "BR-EL-002 cl-entitlement-within-limit",
+    "purpose": "Verify CL request within entitlement is permitted",
+    "preconditions": "Employee has 8 days CL balance",
+    "action_or_input": "Apply for 2 days of CL",
+    "expected_result": "Application accepted and balance validated",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-004",
+    "source_id": "BR-EL-002 cl-exceeds-entitlement",
+    "purpose": "Verify CL request exceeding available balance is refused",
+    "preconditions": "Employee has 1 day CL balance",
+    "action_or_input": "Apply for 3 days of CL",
+    "expected_result": "Request refused with 422 Unprocessable Entity due to insufficient balance",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-005",
+    "source_id": "BR-EL-002 cl-annual-lapse",
+    "purpose": "Verify uncredited/remaining CL lapses at calendar year end without carry-forward",
+    "preconditions": "Employee has remaining CL balance at end of calendar year",
+    "action_or_input": "Trigger year-end processing for CL",
+    "expected_result": "Remaining CL balance lapses to 0 and does not carry forward into next calendar year",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-006",
+    "source_id": "BR-EL-003 rh-published-date",
+    "purpose": "Verify RH can only be taken on dates listed in the published RH calendar up to limit (2 days/year)",
+    "preconditions": "Calendar year has published RH list; employee has taken 0 RH days",
+    "action_or_input": "Apply for RH on a published RH date",
+    "expected_result": "Application accepted and validated against published RH calendar",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-007",
+    "source_id": "BR-EL-003 rh-unpublished-date",
+    "purpose": "Verify RH requested on non-published date is refused",
+    "preconditions": "Requested date is not in published RH list",
+    "action_or_input": "Apply for RH on an unlisted date",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-008",
+    "source_id": "BR-EL-003 rh-limit-exceeded",
+    "purpose": "Verify RH request exceeding annual max of 2 days is refused",
+    "preconditions": "Employee has already utilized 2 RH days in current calendar year",
+    "action_or_input": "Apply for a 3rd RH day",
+    "expected_result": "Request refused with 422 Unprocessable Entity due to RH quota exhaustion",
+    "test_type": "boundary"
+  },
+  {
+    "test_id": "SPEC-BR-009",
+    "source_id": "BR-EL-004 scl-entitlement-within-limit",
+    "purpose": "Verify Special Casual Leave (SCL) application within annual 15-day limit with valid admissible purpose",
+    "preconditions": "Employee has 15 days SCL remaining and valid conference/academic duty reason",
+    "action_or_input": "Apply for 3 days SCL with supported academic purpose",
+    "expected_result": "Request accepted for processing",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-010",
+    "source_id": "BR-EL-004 scl-exceeds-limit",
+    "purpose": "Verify SCL exceeding 15 days in calendar year is rejected",
+    "preconditions": "Employee has 2 days SCL remaining",
+    "action_or_input": "Apply for 4 days SCL",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "boundary"
+  },
+  {
+    "test_id": "SPEC-BR-011",
+    "source_id": "BR-EL-005 non-faculty-el-accumulation-cap",
+    "purpose": "Verify Earned Leave (EL) carries forward up to maximum accumulation limit (300 days)",
+    "preconditions": "Staff employee has 295 days EL balance; 15 days credited at semi-annual credit",
+    "action_or_input": "Execute EL credit calculation",
+    "expected_result": "Balance is capped at 300 days; excess days do not accumulate beyond 300",
+    "test_type": "boundary"
+  },
+  {
+    "test_id": "SPEC-BR-012",
+    "source_id": "BR-EL-006 faculty-vacation-period-confinement",
+    "purpose": "Verify faculty Vacation Leave (VL) can only be availed during notified Academic Vacation periods",
+    "preconditions": "Date is within notified Academic Vacation period",
+    "action_or_input": "Faculty applies for VL within vacation dates",
+    "expected_result": "Request accepted",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-013",
+    "source_id": "BR-EL-006 faculty-vacation-outside-period",
+    "purpose": "Verify faculty VL applied outside notified vacation period is rejected",
+    "preconditions": "Date is during academic semester (outside notified vacation period)",
+    "action_or_input": "Faculty applies for VL",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-014",
+    "source_id": "BR-EL-007 vl-to-el-conversion-ratio",
+    "purpose": "Verify unavailed VL converts to EL at 2:1 ratio for faculty preventing forfeiture",
+    "preconditions": "Faculty has 10 unavailed VL days at calendar year-end",
+    "action_or_input": "Execute year-end VL conversion",
+    "expected_result": "5 days added to EL balance (10 / 2 = 5 EL days credited)",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-015",
+    "source_id": "BR-EL-008 el-from-vl-subject-to-300-cap",
+    "purpose": "Verify EL credited from VL conversion is subject to overall 300-day cap",
+    "preconditions": "Faculty EL balance is 298 days; 10 unavailed VL days (5 EL days equivalent)",
+    "action_or_input": "Execute year-end conversion",
+    "expected_result": "EL balance becomes 300 days max; remaining 3 days overflow/capped",
+    "test_type": "boundary"
+  },
+  {
+    "test_id": "SPEC-BR-016",
+    "source_id": "BR-EL-009 commuted-leave-medical-certificate",
+    "purpose": "Verify Commuted Leave (COL) debits Half Pay Leave at 2:1 ratio and requires medical certificate",
+    "preconditions": "Employee applies for 5 days Commuted Leave with medical certificate uploaded",
+    "action_or_input": "Submit COL request for 5 days",
+    "expected_result": "Request accepted, 10 days debited from Half Pay Leave / COL entitlement",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-017",
+    "source_id": "BR-EL-009 commuted-leave-no-certificate",
+    "purpose": "Verify Commuted Leave without medical certificate is refused",
+    "preconditions": "Employee applies for COL without medical certificate",
+    "action_or_input": "Submit COL request without document attachment",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-018",
+    "source_id": "BR-EL-010 half-day-cl-permitted-sessions",
+    "purpose": "Verify CL can be taken as 0.5 day for first-half or second-half",
+    "preconditions": "Employee has sufficient CL balance",
+    "action_or_input": "Apply for half-day CL for first-half (FN)",
+    "expected_result": "Chargeable duration is calculated exactly as 0.5 days",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-019",
+    "source_id": "BR-EL-010 non-cl-half-day-prohibited",
+    "purpose": "Verify half-day is prohibited for non-CL categories (EL, SCL, COL, VL)",
+    "preconditions": "Employee applies for EL",
+    "action_or_input": "Apply for 0.5 days of EL",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-020",
+    "source_id": "BR-EL-011 continuous-counting-el-col-vl",
+    "purpose": "Verify intervening weekends/holidays are included in chargeable days for EL, COL, and VL",
+    "preconditions": "Friday to Monday requested period with weekend in between (2 working days, 2 weekend days)",
+    "action_or_input": "Calculate duration for EL from Friday to Monday",
+    "expected_result": "Duration is calculated as 4 continuous days",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-021",
+    "source_id": "BR-EL-011 working-day-counting-cl-scl",
+    "purpose": "Verify intervening weekends/holidays are excluded for CL and SCL",
+    "preconditions": "Friday to Monday requested period with Saturday and Sunday as weekend",
+    "action_or_input": "Calculate duration for CL from Friday to Monday",
+    "expected_result": "Duration is calculated as 2 working days",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-022",
+    "source_id": "BR-EL-012 applicant-non-overlap-blocking",
+    "purpose": "Verify new leave request overlapping with active pending/approved leave is blocked",
+    "preconditions": "Employee has approved leave from 2026-12-10 to 2026-12-15",
+    "action_or_input": "Apply for leave from 2026-12-12 to 2026-12-14",
+    "expected_result": "Request refused with 422 Unprocessable Entity due to overlapping leave",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-023",
+    "source_id": "BR-EL-012 half-day-cl-different-halves-coexistence",
+    "purpose": "Verify first-half and second-half CL on the same date do not overlap and can coexist",
+    "preconditions": "Employee has approved half-day CL on 2026-12-10 FN (morning session)",
+    "action_or_input": "Apply for half-day CL on 2026-12-10 AN (afternoon session)",
+    "expected_result": "Request passes overlap validation and is accepted",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-024",
+    "source_id": "BR-EL-013 station-leave-coupling",
+    "purpose": "Verify Station Leave information is coupled to the leave request and does not form independent lifecycle",
+    "preconditions": "Employee applying for leave with outstation travel",
+    "action_or_input": "Submit leave application with station leave details (destination, emergency contact, dates)",
+    "expected_result": "Station leave captured inside the single leave application without separate request ID",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-025",
+    "source_id": "BR-EL-014 substitute-eligibility-permitted",
+    "purpose": "Verify nominated substitute is eligible (active employee, distinct from applicant, not on leave)",
+    "preconditions": "Substitute is active employee in same/compatible unit and not on leave",
+    "action_or_input": "Nominate valid substitute in leave application",
+    "expected_result": "Nomination accepted",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-026",
+    "source_id": "BR-EL-014 substitute-self-nomination-prohibited",
+    "purpose": "Verify applicant cannot nominate themselves as substitute",
+    "preconditions": "Applicant attempts to select their own user ID as substitute",
+    "action_or_input": "Submit leave application with applicant as substitute",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-027",
+    "source_id": "BR-EL-015 substitute-consent-gate",
+    "purpose": "Verify request does not advance to Unit Head review until substitute gives consent",
+    "preconditions": "Leave application submitted with nominated substitute",
+    "action_or_input": "Check request state prior to substitute response",
+    "expected_result": "Request remains in PENDING_SUBSTITUTE state; Unit Head cannot act",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-028",
+    "source_id": "BR-EL-015 substitute-decline-recovery",
+    "purpose": "Verify when substitute declines, applicant can nominate a replacement substitute",
+    "preconditions": "Request in PENDING_SUBSTITUTE; substitute declines nomination",
+    "action_or_input": "Applicant nominates a new substitute",
+    "expected_result": "Request updates substitute and re-enters PENDING_SUBSTITUTE for new nominee",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-029",
+    "source_id": "BR-EL-016 unit-head-final-scope-cl-rh",
+    "purpose": "Verify Unit Head decision is final sanctioning authority for CL and RH",
+    "preconditions": "Request for CL approved by substitute and routed to Unit Head",
+    "action_or_input": "Unit Head approves the request",
+    "expected_result": "Request status transitions directly to SANCTIONED/APPROVED without higher routing",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-030",
+    "source_id": "BR-EL-017 unit-head-recommendation-higher-sanction",
+    "purpose": "Verify Unit Head review of EL/COL/VL/SCL is recommendation and routes to higher sanctioning authority",
+    "preconditions": "Request for EL with substitute consent at Unit Head review",
+    "action_or_input": "Unit Head approves/recommends request",
+    "expected_result": "Request status transitions to RECOMMENDED / PENDING_HIGHER_SANCTION",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-031",
+    "source_id": "BR-EL-018 higher-sanction-routing-competent-authority",
+    "purpose": "Verify higher-sanction request reaches designated competent authority (Dean/Director)",
+    "preconditions": "Request recommended by Unit Head",
+    "action_or_input": "Competent authority approves the request",
+    "expected_result": "Request transitions to SANCTIONED/APPROVED and balance is debited",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-032",
+    "source_id": "BR-EL-019 authority-resolution-establishment-check",
+    "purpose": "Verify administrative establishment verification step can verify leave admissibility before final sanction",
+    "preconditions": "Higher sanction leave requires establishment admissibility check",
+    "action_or_input": "Establishment admin records admissibility verification",
+    "expected_result": "Admissibility record logged in action history",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-033",
+    "source_id": "BR-EL-020 director-self-sanction",
+    "purpose": "Verify Director leave request is auto-sanctioned / self-sanctioned without routing to subordinate",
+    "preconditions": "Applicant holds Director role",
+    "action_or_input": "Director submits leave request",
+    "expected_result": "Request is self-sanctioned without requiring Unit Head approval",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-034",
+    "source_id": "BR-EL-022 immediate-withdrawal-pending-request",
+    "purpose": "Verify applicant can immediately withdraw a pending request prior to final sanction",
+    "preconditions": "Leave request in PENDING_SUBSTITUTE or PENDING_APPROVAL",
+    "action_or_input": "Applicant withdraws the request",
+    "expected_result": "Request status immediately transitions to WITHDRAWN; pending debit is released",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-035",
+    "source_id": "BR-EL-022 withdrawal-prohibited-after-sanction",
+    "purpose": "Verify withdrawal is rejected once leave is already approved/sanctioned",
+    "preconditions": "Leave request in SANCTIONED/APPROVED state",
+    "action_or_input": "Applicant attempts immediate withdrawal",
+    "expected_result": "Request refused with 422 Unprocessable Entity (cancellation must be used instead)",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-036",
+    "source_id": "BR-EL-023 cancellation-approved-leave-before-start",
+    "purpose": "Verify approved leave can be cancelled before its start date with sanctioning authority approval",
+    "preconditions": "Leave is SANCTIONED, start date is in the future",
+    "action_or_input": "Applicant requests cancellation before start date",
+    "expected_result": "Cancellation recorded and leave balance restored upon approval",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-037",
+    "source_id": "BR-EL-023 cancellation-rejected-after-start",
+    "purpose": "Verify cancellation is prohibited after leave start date has passed",
+    "preconditions": "Leave start date is in the past",
+    "action_or_input": "Applicant attempts cancellation",
+    "expected_result": "Request refused with 422 Unprocessable Entity (resumption/early resumption must be used)",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-038",
+    "source_id": "BR-EL-024 fresh-application-after-cancellation",
+    "purpose": "Verify employee can submit a fresh application for identical or overlapping dates once earlier leave is cancelled",
+    "preconditions": "Earlier leave request was fully CANCELLED and balance restored",
+    "action_or_input": "Submit fresh leave application covering same dates",
+    "expected_result": "Application succeeds without overlap error",
+    "test_type": "positive"
+  },
+  {
+    "test_id": "SPEC-BR-039",
+    "source_id": "BR-EL-025 extension-ongoing-leave-permitted",
+    "purpose": "Verify extension of ongoing EL/COL/VL submitted before end of current leave period",
+    "preconditions": "Employee currently on approved EL",
+    "action_or_input": "Submit extension request before ongoing leave expires",
+    "expected_result": "Extension created and routed through approval chain",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-040",
+    "source_id": "BR-EL-025 extension-cl-rh-prohibited",
+    "purpose": "Verify extension workflow is prohibited for CL and RH",
+    "preconditions": "Employee has approved CL",
+    "action_or_input": "Submit extension request for CL",
+    "expected_result": "Request refused with 422 Unprocessable Entity",
+    "test_type": "negative"
+  },
+  {
+    "test_id": "SPEC-BR-041",
+    "source_id": "BR-EL-027 resumption-applicability-submission",
+    "purpose": "Verify duty resumption report submitted upon return from leave",
+    "preconditions": "Employee returns from sanctioned long leave (EL/COL/VL)",
+    "action_or_input": "Submit resumption report with joining date and session",
+    "expected_result": "Resumption report created and pending Unit Head verification",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-042",
+    "source_id": "BR-EL-028 early-resumption-balance-credit",
+    "purpose": "Verify early resumption credits back unavailed leave days to employee balance upon approval",
+    "preconditions": "Sanctioned leave was for 10 days; employee resumes duty 3 days early",
+    "action_or_input": "Unit Head approves early resumption",
+    "expected_result": "Leave record end date adjusted and 3 days credited back to leave balance",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-043",
+    "source_id": "BR-EL-028 late-resumption-unauthorized-absence-marking",
+    "purpose": "Verify late resumption flags overdue period for regularization",
+    "preconditions": "Employee resumes duty 2 days after sanctioned leave end date",
+    "action_or_input": "Submit late resumption report",
+    "expected_result": "Resumption flags late reporting and requires regularization",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-044",
+    "source_id": "BR-EL-029 offline-sanctioned-leave-sync",
+    "purpose": "Verify Admin/Establishment can record offline-sanctioned leave with retrospective adjustment",
+    "preconditions": "Authorized Admin user records offline sanction paper approval",
+    "action_or_input": "Post offline sanction record with reference number and approver details",
+    "expected_result": "Leave ledger synchronized, balance debited, audit trail recorded",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-045",
+    "source_id": "BR-EL-030 current-configured-policy-validation",
+    "purpose": "Verify policy validations evaluate against current active configuration parameters",
+    "preconditions": "Max consecutive CL configured as 3 days",
+    "action_or_input": "Apply for 4 consecutive CL days",
+    "expected_result": "Request rejected due to exceeding current consecutive CL limit",
+    "test_type": "boundary"
+  },
+  {
+    "test_id": "SPEC-BR-046",
+    "source_id": "BR-EL-031 holiday-calendar-effective-dates",
+    "purpose": "Verify gazetted holidays and restricted holidays take effect according to published calendar",
+    "preconditions": "Institute publishes annual holiday calendar",
+    "action_or_input": "Validate holiday counting for date matching gazetted holiday",
+    "expected_result": "Date identified as holiday and excluded from working-day leave count",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-047",
+    "source_id": "BR-EL-032 sla-reminder-generation",
+    "purpose": "Verify SLA reminder notification generated when pending review exceeds reminder threshold",
+    "preconditions": "Task has been pending review beyond reminder SLA threshold hours",
+    "action_or_input": "Run SLA event processing check",
+    "expected_result": "Reminder notification logged/sent to current pending assignee",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-048",
+    "source_id": "BR-EL-033 sla-escalation-generation",
+    "purpose": "Verify SLA escalation notification generated when pending review exceeds escalation threshold",
+    "preconditions": "Task has been pending review beyond escalation SLA threshold hours",
+    "action_or_input": "Run SLA event processing check",
+    "expected_result": "Escalation notification logged/sent to higher authority",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-049",
+    "source_id": "BR-EL-034 no-post-submission-modification",
+    "purpose": "Verify in-place modification of submitted leave request is strictly prohibited",
+    "preconditions": "Leave request has been submitted and has ID",
+    "action_or_input": "Attempt PUT/PATCH to modify leave dates or category",
+    "expected_result": "Request refused with 405 Method Not Allowed or 422 Unprocessable Entity (must withdraw and resubmit)",
+    "test_type": "security"
+  },
+  {
+    "test_id": "SPEC-BR-050",
+    "source_id": "BR-EL-035 task-assignment-notification",
+    "purpose": "Verify action notification is dispatched whenever a pending task is assigned to an actor",
+    "preconditions": "Leave request routed to Unit Head",
+    "action_or_input": "Submit leave application",
+    "expected_result": "Task assignment event recorded for Unit Head",
+    "test_type": "functional"
+  },
+  {
+    "test_id": "SPEC-BR-051",
+    "source_id": "BR-EL-036 role-based-authorization-enforcement",
+    "purpose": "Verify unauthorized user cannot approve or sanction leave requests",
+    "preconditions": "Standard employee without Unit Head role",
+    "action_or_input": "Attempt to approve leave request at Unit Head approval endpoint",
+    "expected_result": "Request refused with 403 Forbidden",
+    "test_type": "security"
+  },
+  {
+    "test_id": "SPEC-BR-052",
+    "source_id": "BR-EL-037 administrative-maintenance-isolation",
+    "purpose": "Verify Admin configuration maintenance cannot sanction or alter individual leave decisions",
+    "preconditions": "Admin user without sanctioning delegation",
+    "action_or_input": "Attempt to sanction pending leave request directly through admin panel",
+    "expected_result": "Request refused with 403 Forbidden",
+    "test_type": "security"
+  },
+  {
+    "test_id": "SPEC-BR-053",
+    "source_id": "BR-EL-038 configurable-sla-thresholds-update",
+    "purpose": "Verify admin can update SLA reminder and escalation threshold hours",
+    "preconditions": "Authorized Admin user updates SLA config",
+    "action_or_input": "Set reminder threshold to 48 hours and escalation threshold to 96 hours",
+    "expected_result": "Configuration updated and applied to subsequent SLA calculations",
+    "test_type": "functional"
+  }
+]
